@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	apperrors "GoTwitter/errors"
 	"GoTwitter/config/env"
 	"GoTwitter/models"
 	"GoTwitter/services"
 	"GoTwitter/utils"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -68,6 +70,15 @@ func clearAuthCookie(w http.ResponseWriter) {
 	})
 }
 
+func handleError(w http.ResponseWriter, err error) {
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) {
+		apperrors.WriteError(w, appErr)
+		return
+	}
+	apperrors.WriteError(w, apperrors.NewAppError("internal server error", http.StatusInternalServerError, err))
+}
+
 func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Username string `json:"username" validate:"required,min=3,max=30"`
@@ -76,12 +87,12 @@ func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := utils.ReadJsonBody(r, &payload); err != nil {
-		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "invalid json body", err)
+		handleError(w, apperrors.NewAppError("invalid json body", http.StatusBadRequest, err))
 		return
 	}
 
 	if err := utils.Validator.Struct(payload); err != nil {
-		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "validation failed", err)
+		handleError(w, apperrors.NewAppError("validation failed", http.StatusBadRequest, err))
 		return
 	}
 
@@ -92,7 +103,7 @@ func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("[ERROR] signup create user failed: %v", err)
-		utils.WriteJsonErrorResponse(w, http.StatusInternalServerError, "failed to create user", err)
+		handleError(w, err)
 		return
 	}
 
@@ -105,7 +116,7 @@ func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[WARN] signup auto-login failed: %v", err)
 	}
 
-	utils.WriteJsonResponse(w, http.StatusCreated, toUserResponse(created))
+	utils.WriteJsonSuccessResponse(w, http.StatusCreated, "User registered successfully", toUserResponse(created))
 }
 
 func (uc *UserController) Login(w http.ResponseWriter, r *http.Request) {
@@ -115,24 +126,24 @@ func (uc *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := utils.ReadJsonBody(r, &payload); err != nil {
-		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "invalid json body", err)
+		handleError(w, apperrors.NewAppError("invalid json body", http.StatusBadRequest, err))
 		return
 	}
 
 	if err := utils.Validator.Struct(payload); err != nil {
-		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "validation failed", err)
+		handleError(w, apperrors.NewAppError("validation failed", http.StatusBadRequest, err))
 		return
 	}
 
 	user, token, err := uc.UserService.Login(r.Context(), payload.Email, payload.Password)
 	if err != nil {
 		log.Printf("[WARN] login failed: %v", err)
-		utils.WriteJsonErrorResponse(w, http.StatusUnauthorized, "invalid credentials", err)
+		handleError(w, err)
 		return
 	}
 
 	setAuthCookie(w, token)
-	utils.WriteJsonResponse(w, http.StatusOK, toUserResponse(user))
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Login successful", toUserResponse(user))
 }
 
 func (uc *UserController) Logout(w http.ResponseWriter, r *http.Request) {

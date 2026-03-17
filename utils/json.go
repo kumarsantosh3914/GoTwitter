@@ -39,16 +39,6 @@ func WriteJsonSuccessResponse(w http.ResponseWriter, status int, message string,
 	return WriteJsonResponse(w, status, response)
 }
 
-func WriteJsonErrorResponse(w http.ResponseWriter, status int, message string, err error) error {
-	response := map[string]any{}
-
-	response["status"] = "error"
-	response["message"] = message
-	response["error"] = err.Error()
-
-	return WriteJsonResponse(w, status, response)
-}
-
 func ReadJsonBody(r *http.Request, result any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields() // Prevent unkown fields from begin include in the JSON body
