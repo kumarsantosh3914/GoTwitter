@@ -2,10 +2,9 @@ package controllers
 
 import (
 	"GoTwitter/config/env"
-	"GoTwitter/services"
 	"GoTwitter/models"
-	"encoding/json"
-	"fmt"
+	"GoTwitter/services"
+	"GoTwitter/utils"
 	"log"
 	"net/http"
 	"strings"
@@ -70,14 +69,19 @@ func clearAuthCookie(w http.ResponseWriter) {
 }
 
 func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Registeruser called in UserController")
 	var payload struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Username string `json:"username" validate:"required,min=3,max=30"`
+		Email    string `json:"email" validate:"required,email"`
+		Password string `json:"password" validate:"required,min=8"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+
+	if err := utils.ReadJsonBody(r, &payload); err != nil {
+		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "invalid json body", err)
+		return
+	}
+
+	if err := utils.Validator.Struct(payload); err != nil {
+		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "validation failed", err)
 		return
 	}
 
@@ -88,11 +92,7 @@ func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("[ERROR] signup create user failed: %v", err)
-		http.Error(w, "failed to create user", http.StatusInternalServerError)
-		return
-	}
-	if created == nil {
-		http.Error(w, "user not created", http.StatusInternalServerError)
+		utils.WriteJsonErrorResponse(w, http.StatusInternalServerError, "failed to create user", err)
 		return
 	}
 
@@ -105,30 +105,34 @@ func (uc *UserController) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[WARN] signup auto-login failed: %v", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toUserResponse(created))
+	utils.WriteJsonResponse(w, http.StatusCreated, toUserResponse(created))
 }
 
 func (uc *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email    string `json:"email" validate:"required,email"`
+		Password string `json:"password" validate:"required"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+
+	if err := utils.ReadJsonBody(r, &payload); err != nil {
+		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "invalid json body", err)
+		return
+	}
+
+	if err := utils.Validator.Struct(payload); err != nil {
+		utils.WriteJsonErrorResponse(w, http.StatusBadRequest, "validation failed", err)
 		return
 	}
 
 	user, token, err := uc.UserService.Login(r.Context(), payload.Email, payload.Password)
 	if err != nil {
 		log.Printf("[WARN] login failed: %v", err)
-		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		utils.WriteJsonErrorResponse(w, http.StatusUnauthorized, "invalid credentials", err)
 		return
 	}
 
 	setAuthCookie(w, token)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toUserResponse(user))
+	utils.WriteJsonResponse(w, http.StatusOK, toUserResponse(user))
 }
 
 func (uc *UserController) Logout(w http.ResponseWriter, r *http.Request) {
