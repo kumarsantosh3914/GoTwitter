@@ -1,12 +1,16 @@
 package db
 
+import "database/sql"
+
 // Facilitates dependency injection for respository
 type Storage struct {
+	DB             *sql.DB
 	UserRepository UserRepository
 }
 
-func NewStorage() *Storage {
+func NewStorage(db *sql.DB) *Storage {
 	return &Storage{
-		UserRepository: &UserRepositoryImpl{},
+		DB:             db,
+		UserRepository: NewUserRepository(db),
 	}
 }

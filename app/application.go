@@ -18,7 +18,7 @@ type Config struct {
 
 type Application struct {
 	Config Config
-	Store  db.Storage
+	Store  *db.Storage
 }
 
 // Construction for config
@@ -34,16 +34,15 @@ func NewConfig() Config {
 }
 
 // Construction for Application
-func NewApplication(cfg Config) *Application {
+func NewApplication(cfg Config, store *db.Storage) *Application {
 	return &Application{
 		Config: cfg,
-		Store:  *db.NewStorage(),
+		Store:  store,
 	}
 }
 
 func (app *Application) Run() error {
-	ur := db.NewUserRepository()
-	us := services.NewUserService(ur)
+	us := services.NewUserService(app.Store.UserRepository)
 	uc := controllers.NewUserController(us)
 	uRouter := router.NewUserRouter(uc)
 
