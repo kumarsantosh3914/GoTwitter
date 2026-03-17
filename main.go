@@ -5,10 +5,13 @@ import (
 
 	"GoTwitter/app"
 	dbconfig "GoTwitter/config/db"
+	env "GoTwitter/config/env"
 	db "GoTwitter/db/repositories"
 )
 
 func main() {
+	env.Load()
+
 	cfg := app.NewConfig()
 	conn, err := dbconfig.SetupDB()
 	if err != nil {

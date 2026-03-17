@@ -3,17 +3,22 @@ package env
 import (
 	"log"
 	"os"
-	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/joho/godotenv"
 )
 
+var loadOnce sync.Once
+
 func Load() {
-	err := godotenv.Load()
-	if err != nil {
-		// Log the error if the .env file not found or cannot be loaded
-		log.Println("[ERROR] Something failed")
-	}
+	loadOnce.Do(func() {
+		// Overload so local `.env` always wins over existing env vars.
+		if err := godotenv.Overload(".env"); err != nil {
+			log.Printf("[WARN] .env not loaded: %v", err)
+			return
+		}
+	})
 }
 
 func GetString(key string, fallback string) string {
@@ -21,43 +26,9 @@ func GetString(key string, fallback string) string {
 
 	value, ok := os.LookupEnv(key)
 
-	if !ok {
+	if !ok || strings.TrimSpace(value) == "" {
 		return fallback
 	}
 
 	return value
-}
-
-func getInt(key string, fallback int) int {
-	value, ok := os.LookupEnv(key)
-
-	if !ok {
-		return fallback
-	}
-
-	intValue, err := strconv.Atoi(value)
-
-	if err != nil {
-		log.Printf("[ERROR] Error converting %q to int: %v", key, err)
-		return fallback
-	}
-
-	return intValue
-}
-
-func getBool(key string, fallback bool) bool {
-	value, ok := os.LookupEnv(key)
-
-	if !ok {
-		return fallback
-	}
-
-	boolValue, err := strconv.ParseBool(value)
-
-	if err != nil {
-		log.Printf("[ERROR] Error converting %q to bool: %v", key, err)
-		return fallback
-	}
-
-	return boolValue
 }

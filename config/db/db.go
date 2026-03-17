@@ -15,7 +15,9 @@ func SetupDB() (*sql.DB, error) {
 	cfg.Passwd = env.GetString("DB_PASSWORD", "")
 	cfg.Net = env.GetString("DB_NET", "tcp")
 	cfg.Addr = env.GetString("DB_ADDR", "127.0.0.1:3306")
-	cfg.DBName = env.GetString("DB_NAME", "twitter_dev")
+
+	cfg.DBName = env.GetString("DB_NAME", env.GetString("DBName", "twitter_dev"))
+	cfg.ParseTime = true
 
 	log.Println("[INFO] Connecting to database:", cfg.DBName)
 
