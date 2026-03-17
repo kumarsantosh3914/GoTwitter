@@ -10,8 +10,9 @@ import (
 type UserRepository interface {
 	Create(ctx context.Context, user *models.User) (*models.User, error)
 	GetByID(ctx context.Context, id int64) (*models.User, error)
-	GetAll() ([]*models.User, error)
-	DeleteByID(id int64) error
+	GetAll(ctx context.Context, limit, offset int) ([]*models.User, error)
+	Update(ctx context.Context, user *models.User) error
+	DeleteByID(ctx context.Context, id int64) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 }
 
@@ -86,15 +87,22 @@ func (u *UserRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Use
 	return &user, nil
 }
 
-func (u *UserRepositoryImpl) GetAll() ([]*models.User, error) {
+func (u *UserRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]*models.User, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if u.db == nil {
 		return nil, errors.New("db is nil")
 	}
 
-	rows, err := u.db.Query(
+	rows, err := u.db.QueryContext(
+		ctx,
 		`SELECT id, username, email, password, created_at, updated_at
 		 FROM users
-		 ORDER BY id DESC`,
+		 ORDER BY id DESC
+		 LIMIT ? OFFSET ?`,
+		limit,
+		offset,
 	)
 	if err != nil {
 		return nil, err
@@ -115,11 +123,37 @@ func (u *UserRepositoryImpl) GetAll() ([]*models.User, error) {
 	return users, nil
 }
 
-func (u *UserRepositoryImpl) DeleteByID(id int64) error {
+func (u *UserRepositoryImpl) Update(ctx context.Context, user *models.User) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if user == nil {
+		return errors.New("user is nil")
+	}
 	if u.db == nil {
 		return errors.New("db is nil")
 	}
-	_, err := u.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+
+	_, err := u.db.ExecContext(
+		ctx,
+		`UPDATE users 
+		 SET username = ?, email = ?, updated_at = NOW()
+		 WHERE id = ?`,
+		user.Username,
+		user.Email,
+		user.Id,
+	)
+	return err
+}
+
+func (u *UserRepositoryImpl) DeleteByID(ctx context.Context, id int64) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if u.db == nil {
+		return errors.New("db is nil")
+	}
+	_, err := u.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	return err
 }
 

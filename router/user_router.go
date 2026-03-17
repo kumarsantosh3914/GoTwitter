@@ -20,4 +20,11 @@ func (ur *UserRouter) Register(r chi.Router) {
 	r.Post("/signup", ur.userController.RegisterUser)
 	r.Post("/login", ur.userController.Login)
 	r.Post("/logout", ur.userController.Logout)
+
+	r.Route("/users", func(r chi.Router) {
+		r.Get("/", ur.userController.ListUsers)
+		r.Get("/{id}", ur.userController.GetUser)
+		r.Put("/{id}", ur.userController.UpdateUser)
+		r.Delete("/{id}", ur.userController.DeleteUser)
+	})
 }

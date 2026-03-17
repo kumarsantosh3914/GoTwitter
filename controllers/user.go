@@ -9,8 +9,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type UserController struct {
@@ -42,6 +45,14 @@ func toUserResponse(u *models.User) *userResponse {
 		CreatedAt: u.CreatedAt,
 		UpdatedAt: u.UpdatedAt,
 	}
+}
+
+func toUserResponses(users []*models.User) []*userResponse {
+	res := make([]*userResponse, len(users))
+	for i, u := range users {
+		res[i] = toUserResponse(u)
+	}
+	return res
 }
 
 func setAuthCookie(w http.ResponseWriter, token string) {
@@ -149,4 +160,87 @@ func (uc *UserController) Login(w http.ResponseWriter, r *http.Request) {
 func (uc *UserController) Logout(w http.ResponseWriter, r *http.Request) {
 	clearAuthCookie(w)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (uc *UserController) ListUsers(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+
+	users, err := uc.UserService.ListUsers(r.Context(), page, pageSize)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Users fetched successfully", toUserResponses(users))
+}
+
+func (uc *UserController) GetUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
+		return
+	}
+
+	user, err := uc.UserService.GetUserByID(r.Context(), id)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "User fetched successfully", toUserResponse(user))
+}
+
+func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
+		return
+	}
+
+	var payload struct {
+		Username string `json:"username" validate:"required,min=3,max=30"`
+		Email    string `json:"email" validate:"required,email"`
+	}
+
+	if err := utils.ReadJsonBody(r, &payload); err != nil {
+		handleError(w, apperrors.NewAppError("invalid json body", http.StatusBadRequest, err))
+		return
+	}
+
+	if err := utils.Validator.Struct(payload); err != nil {
+		handleError(w, apperrors.NewAppError("validation failed", http.StatusBadRequest, err))
+		return
+	}
+
+	user := &models.User{
+		Id:       id,
+		Username: payload.Username,
+		Email:    payload.Email,
+	}
+
+	if err := uc.UserService.UpdateUser(r.Context(), user); err != nil {
+		handleError(w, err)
+		return
+	}
+
+	// Fetch updated user to return
+	updated, _ := uc.UserService.GetUserByID(r.Context(), id)
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "User updated successfully", toUserResponse(updated))
+}
+
+func (uc *UserController) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
+		return
+	}
+
+	if err := uc.UserService.DeleteUser(r.Context(), id); err != nil {
+		handleError(w, err)
+		return
+	}
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "User deleted successfully", nil)
 }

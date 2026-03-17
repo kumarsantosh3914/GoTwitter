@@ -13,6 +13,10 @@ import (
 type UserService interface {
 	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
 	Login(ctx context.Context, email string, password string) (*models.User, string, error)
+	ListUsers(ctx context.Context, page, pageSize int) ([]*models.User, error)
+	GetUserByID(ctx context.Context, id int64) (*models.User, error)
+	UpdateUser(ctx context.Context, user *models.User) error
+	DeleteUser(ctx context.Context, id int64) error
 }
 
 type UserServiceImpl struct {
@@ -70,4 +74,67 @@ func (u *UserServiceImpl) Login(ctx context.Context, email string, password stri
 		return nil, "", apperrors.NewAppError("failed to generate token", http.StatusInternalServerError, err)
 	}
 	return user, token, nil
+}
+
+func (u *UserServiceImpl) ListUsers(ctx context.Context, page, pageSize int) ([]*models.User, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	offset := (page - 1) * pageSize
+
+	users, err := u.userRepository.GetAll(ctx, pageSize, offset)
+	if err != nil {
+		return nil, apperrors.NewAppError("failed to fetch users", http.StatusInternalServerError, err)
+	}
+	return users, nil
+}
+
+func (u *UserServiceImpl) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+	user, err := u.userRepository.GetByID(ctx, id)
+	if err != nil {
+		return nil, apperrors.NewAppError("failed to fetch user", http.StatusInternalServerError, err)
+	}
+	if user == nil {
+		return nil, apperrors.NewAppError("user not found", http.StatusNotFound, nil)
+	}
+	return user, nil
+}
+
+func (u *UserServiceImpl) UpdateUser(ctx context.Context, user *models.User) error {
+	if user == nil {
+		return apperrors.NewAppError("user is nil", http.StatusBadRequest, nil)
+	}
+
+	// Check if user exists
+	existing, err := u.userRepository.GetByID(ctx, user.Id)
+	if err != nil {
+		return apperrors.NewAppError("failed to fetch user", http.StatusInternalServerError, err)
+	}
+	if existing == nil {
+		return apperrors.NewAppError("user not found", http.StatusNotFound, nil)
+	}
+
+	if err := u.userRepository.Update(ctx, user); err != nil {
+		return apperrors.NewAppError("failed to update user", http.StatusInternalServerError, err)
+	}
+	return nil
+}
+
+func (u *UserServiceImpl) DeleteUser(ctx context.Context, id int64) error {
+	// Check if user exists
+	existing, err := u.userRepository.GetByID(ctx, id)
+	if err != nil {
+		return apperrors.NewAppError("failed to fetch user", http.StatusInternalServerError, err)
+	}
+	if existing == nil {
+		return apperrors.NewAppError("user not found", http.StatusNotFound, nil)
+	}
+
+	if err := u.userRepository.DeleteByID(ctx, id); err != nil {
+		return apperrors.NewAppError("failed to delete user", http.StatusInternalServerError, err)
+	}
+	return nil
 }
