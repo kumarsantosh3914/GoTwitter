@@ -14,6 +14,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *models.User) error
 	DeleteByID(ctx context.Context, id int64) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
 }
 
 type UserRepositoryImpl struct {
@@ -173,6 +174,32 @@ func (u *UserRepositoryImpl) GetUserByEmail(ctx context.Context, email string) (
 		 WHERE email = ?
 		 LIMIT 1`,
 		email,
+	).Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (u *UserRepositoryImpl) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if u.db == nil {
+		return nil, errors.New("db is nil")
+	}
+
+	var user models.User
+	err := u.db.QueryRowContext(
+		ctx,
+		`SELECT id, username, email, password, created_at, updated_at
+		 FROM users
+		 WHERE username = ?
+		 LIMIT 1`,
+		username,
 	).Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

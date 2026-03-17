@@ -38,6 +38,24 @@ func (u *UserServiceImpl) CreateUser(ctx context.Context, user *models.User) (*m
 		return nil, apperrors.NewAppError("password is required", http.StatusBadRequest, nil)
 	}
 
+	// Check email uniqueness
+	existingEmail, err := u.userRepository.GetUserByEmail(ctx, user.Email)
+	if err != nil {
+		return nil, apperrors.NewAppError("error checking email uniqueness", http.StatusInternalServerError, err)
+	}
+	if existingEmail != nil {
+		return nil, apperrors.NewAppError("email already in use", http.StatusConflict, nil)
+	}
+
+	// Check username uniqueness
+	existingUsername, err := u.userRepository.GetUserByUsername(ctx, user.Username)
+	if err != nil {
+		return nil, apperrors.NewAppError("error checking username uniqueness", http.StatusInternalServerError, err)
+	}
+	if existingUsername != nil {
+		return nil, apperrors.NewAppError("username already in use", http.StatusConflict, nil)
+	}
+
 	hashed, err := utils.HashPassword(user.Password)
 	if err != nil {
 		return nil, apperrors.NewAppError("failed to hash password", http.StatusInternalServerError, err)
@@ -115,6 +133,22 @@ func (u *UserServiceImpl) UpdateUser(ctx context.Context, user *models.User) err
 	}
 	if existing == nil {
 		return apperrors.NewAppError("user not found", http.StatusNotFound, nil)
+	}
+
+	// Check email uniqueness if changed
+	if user.Email != existing.Email {
+		existingEmail, _ := u.userRepository.GetUserByEmail(ctx, user.Email)
+		if existingEmail != nil {
+			return apperrors.NewAppError("email already in use", http.StatusConflict, nil)
+		}
+	}
+
+	// Check username uniqueness if changed
+	if user.Username != existing.Username {
+		existingUsername, _ := u.userRepository.GetUserByUsername(ctx, user.Username)
+		if existingUsername != nil {
+			return apperrors.NewAppError("username already in use", http.StatusConflict, nil)
+		}
 	}
 
 	if err := u.userRepository.Update(ctx, user); err != nil {
