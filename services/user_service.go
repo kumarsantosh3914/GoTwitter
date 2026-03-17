@@ -2,11 +2,13 @@ package services
 
 import (
 	db "GoTwitter/db/repositories"
+	"GoTwitter/models"
+	"context"
 	"fmt"
 )
 
 type UserService interface {
-	CreateUser() error
+	CreateUser(ctx context.Context, user *models.User) (*models.User, error)
 }
 
 type UserServiceImpl struct {
@@ -19,8 +21,7 @@ func NewUserService(_userRepository db.UserRepository) UserService {
 	}
 }
 
-func (u *UserServiceImpl) CreateUser() error {
+func (u *UserServiceImpl) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	fmt.Println("Creating user in userService")
-	u.userRepository.Create()
-	return nil
+	return u.userRepository.Create(ctx, user)
 }
