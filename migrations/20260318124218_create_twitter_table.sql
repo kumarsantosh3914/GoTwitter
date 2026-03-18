@@ -1,0 +1,13 @@
+-- +goose Up
+CREATE TABLE tweets (
+ id SERIAL PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL,
+ tweet VARCHAR(285) NOT NULL,
+ created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+
+-- +goose Down
+DROP TABLE tweets;
