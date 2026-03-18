@@ -46,7 +46,7 @@ func (app *Application) Run() error {
 	uc := controllers.NewUserController(us)
 	uRouter := router.NewUserRouter(uc)
 
-	ts := services.NewTweetService(app.Store.TweetRepository)
+	ts := services.NewTweetService(app.Store.TweetRepository, app.Store.TagRepository)
 	tc := controllers.NewTweetController(ts)
 	tRouter := router.NewTweetRouter(tc)
 

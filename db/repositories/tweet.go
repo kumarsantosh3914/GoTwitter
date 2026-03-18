@@ -5,12 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 type TweetRepository interface {
 	Create(ctx context.Context, tweet *models.Tweet) (*models.Tweet, error)
 	GetByID(ctx context.Context, id int64) (*models.Tweet, error)
-	GetAll(ctx context.Context, limit, offset int) ([]*models.Tweet, error)
+	GetAll(ctx context.Context, limit, offset int, userId int64, tag string, search string) ([]*models.Tweet, error)
 	Update(ctx context.Context, tweet *models.Tweet) error
 	DeleteByID(ctx context.Context, id int64) error
 }
@@ -40,7 +41,7 @@ func (t *TweetRepositoryImpl) Create(ctx context.Context, tweet *models.Tweet) (
 		ctx,
 		`INSERT INTO tweets (user_id, tweet, created_at, updated_at)
 		 VALUES (?, ?, NOW(), NOW())`,
-		tweet.UserID,
+		tweet.UserId,
 		tweet.Tweet,
 	)
 	if err != nil {
@@ -75,7 +76,7 @@ func (t *TweetRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Tw
 		 WHERE id = ?
 		 LIMIT 1`,
 		id,
-	).Scan(&tweet.ID, &tweet.UserID, &tweet.Tweet, &tweet.CreatedAt, &tweet.UpdatedAt)
+	).Scan(&tweet.Id, &tweet.UserId, &tweet.Tweet, &tweet.CreatedAt, &tweet.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -85,7 +86,7 @@ func (t *TweetRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Tw
 	return &tweet, nil
 }
 
-func (t *TweetRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]*models.Tweet, error) {
+func (t *TweetRepositoryImpl) GetAll(ctx context.Context, limit, offset int, userId int64, tag string, search string) ([]*models.Tweet, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -93,15 +94,37 @@ func (t *TweetRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]
 		return nil, errors.New("db is nil")
 	}
 
-	rows, err := t.db.QueryContext(
-		ctx,
-		`SELECT id, user_id, tweet, created_at, updated_at
-		 FROM tweets
-		 ORDER BY id DESC
-		 LIMIT ? OFFSET ?`,
-		limit,
-		offset,
-	)
+	query := `SELECT DISTINCT t.id, t.user_id, t.tweet, t.created_at, t.updated_at
+			  FROM tweets t`
+	
+	var conditions []string
+	var args []interface{}
+
+	if tag != "" {
+		query += ` JOIN tweet_tags tt ON t.id = tt.tweet_id
+				   JOIN tags tg ON tt.tag_id = tg.id`
+		conditions = append(conditions, "tg.name = ?")
+		args = append(args, tag)
+	}
+
+	if userId > 0 {
+		conditions = append(conditions, "t.user_id = ?")
+		args = append(args, userId)
+	}
+
+	if search != "" {
+		conditions = append(conditions, "t.tweet LIKE ?")
+		args = append(args, "%"+search+"%")
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	query += " ORDER BY t.id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +133,7 @@ func (t *TweetRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]
 	var tweets []*models.Tweet
 	for rows.Next() {
 		var tweet models.Tweet
-		if err := rows.Scan(&tweet.ID, &tweet.UserID, &tweet.Tweet, &tweet.CreatedAt, &tweet.UpdatedAt); err != nil {
+		if err := rows.Scan(&tweet.Id, &tweet.UserId, &tweet.Tweet, &tweet.CreatedAt, &tweet.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tweets = append(tweets, &tweet)
@@ -138,7 +161,7 @@ func (t *TweetRepositoryImpl) Update(ctx context.Context, tweet *models.Tweet) e
 		 SET tweet = ?, updated_at = NOW()
 		 WHERE id = ?`,
 		tweet.Tweet,
-		tweet.ID,
+		tweet.Id,
 	)
 	return err
 }

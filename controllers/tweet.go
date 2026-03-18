@@ -30,7 +30,7 @@ func (tc *TweetController) CreateTweet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Tweet string `json:"tweet" validate:"required,max=285"`
+		Tweet string `json:"tweet" validate:"required,max=280"`
 	}
 
 	if err := utils.ReadJsonBody(r, &payload); err != nil {
@@ -44,7 +44,7 @@ func (tc *TweetController) CreateTweet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, err := tc.TweetService.CreateTweet(r.Context(), &models.Tweet{
-		UserID: uint64(claims.UserID),
+		UserId: claims.UserID,
 		Tweet:  payload.Tweet,
 	})
 	if err != nil {
@@ -57,10 +57,15 @@ func (tc *TweetController) CreateTweet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (tc *TweetController) ListTweets(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	query := r.URL.Query()
+	page, _ := strconv.Atoi(query.Get("page"))
+	pageSize, _ := strconv.Atoi(query.Get("page_size"))
+	
+	userId, _ := strconv.ParseInt(query.Get("user_id"), 10, 64)
+	tag := query.Get("tag")
+	search := query.Get("q")
 
-	tweets, err := tc.TweetService.ListTweets(r.Context(), page, pageSize)
+	tweets, err := tc.TweetService.ListTweets(r.Context(), page, pageSize, userId, tag, search)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -99,7 +104,7 @@ func (tc *TweetController) UpdateTweet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Tweet string `json:"tweet" validate:"required,max=285"`
+		Tweet string `json:"tweet" validate:"required,max=280"`
 	}
 
 	if err := utils.ReadJsonBody(r, &payload); err != nil {
@@ -113,8 +118,8 @@ func (tc *TweetController) UpdateTweet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tweet := &models.Tweet{
-		ID:     uint64(id),
-		UserID: uint64(claims.UserID),
+		Id:     id,
+		UserId: claims.UserID,
 		Tweet:  payload.Tweet,
 	}
 
