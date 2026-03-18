@@ -1,12 +1,11 @@
 package services
 
 import (
-	apperrors "GoTwitter/errors"
 	db "GoTwitter/db/repositories"
+	apperrors "GoTwitter/errors"
 	"GoTwitter/models"
 	"GoTwitter/utils"
 	"context"
-	"fmt"
 	"net/http"
 )
 
@@ -30,7 +29,6 @@ func NewUserService(_userRepository db.UserRepository) UserService {
 }
 
 func (u *UserServiceImpl) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	fmt.Println("Creating user in userService")
 	if user == nil {
 		return nil, apperrors.NewAppError("user is nil", http.StatusBadRequest, nil)
 	}

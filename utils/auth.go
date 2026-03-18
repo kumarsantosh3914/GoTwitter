@@ -2,12 +2,21 @@ package utils
 
 import (
 	env "GoTwitter/config/env"
+	"context"
 	"errors"
-	"time"
-
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"time"
 )
+
+type contextKey string
+
+const UserContextKey contextKey = "user"
+
+func GetUserFromContext(ctx context.Context) (*Claims, bool) {
+	claims, ok := ctx.Value(UserContextKey).(*Claims)
+	return claims, ok
+}
 
 func HashPassword(plainPassword string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)

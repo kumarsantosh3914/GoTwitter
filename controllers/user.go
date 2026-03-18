@@ -1,8 +1,8 @@
 package controllers
 
 import (
-	apperrors "GoTwitter/errors"
 	"GoTwitter/config/env"
+	apperrors "GoTwitter/errors"
 	"GoTwitter/models"
 	"GoTwitter/services"
 	"GoTwitter/utils"
