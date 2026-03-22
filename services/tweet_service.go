@@ -103,10 +103,22 @@ func (t *TweetServiceImpl) ListTweets(ctx context.Context, page, pageSize int, u
 	if err != nil {
 		return nil, apperrors.NewAppError("failed to fetch tweets", http.StatusInternalServerError, err)
 	}
+	if len(tweets) == 0 {
+		return tweets, nil
+	}
+
+	tweetIDs := make([]int64, 0, len(tweets))
+	for _, tweet := range tweets {
+		tweetIDs = append(tweetIDs, tweet.Id)
+	}
+
+	tagsByTweetID, err := t.tagRepository.GetByTweetIDs(ctx, tweetIDs)
+	if err != nil {
+		return nil, apperrors.NewAppError("failed to fetch tweet tags", http.StatusInternalServerError, err)
+	}
 
 	for _, tweet := range tweets {
-		tags, _ := t.tagRepository.GetByTweetID(ctx, tweet.Id)
-		tweet.Tags = tags
+		tweet.Tags = tagsByTweetID[tweet.Id]
 	}
 
 	return tweets, nil

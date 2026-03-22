@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type TagRepository interface {
@@ -12,6 +14,7 @@ type TagRepository interface {
 	Create(ctx context.Context, tag *models.Tag) (*models.Tag, error)
 	AssociateWithTweet(ctx context.Context, tweetID int64, tagID int64) error
 	GetByTweetID(ctx context.Context, tweetID int64) ([]*models.Tag, error)
+	GetByTweetIDs(ctx context.Context, tweetIDs []int64) (map[int64][]*models.Tag, error)
 	DeleteAssociationsByTweetID(ctx context.Context, tweetID int64) error
 
 	// New methods for Tag Management
@@ -131,6 +134,52 @@ func (t *TagRepositoryImpl) GetByTweetID(ctx context.Context, tweetID int64) ([]
 		tags = append(tags, &tag)
 	}
 	return tags, rows.Err()
+}
+
+func (t *TagRepositoryImpl) GetByTweetIDs(ctx context.Context, tweetIDs []int64) (map[int64][]*models.Tag, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if t.db == nil {
+		return nil, errors.New("db is nil")
+	}
+	if len(tweetIDs) == 0 {
+		return map[int64][]*models.Tag{}, nil
+	}
+
+	placeholders := make([]string, len(tweetIDs))
+	args := make([]interface{}, len(tweetIDs))
+	for i, tweetID := range tweetIDs {
+		placeholders[i] = "?"
+		args[i] = tweetID
+	}
+
+	query := fmt.Sprintf(
+		`SELECT tt.tweet_id, t.id, t.name
+		 FROM tweet_tags tt
+		 JOIN tags t ON t.id = tt.tag_id
+		 WHERE tt.tweet_id IN (%s)
+		 ORDER BY tt.tweet_id, t.id`,
+		strings.Join(placeholders, ", "),
+	)
+
+	rows, err := t.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tagsByTweetID := make(map[int64][]*models.Tag, len(tweetIDs))
+	for rows.Next() {
+		var tweetID int64
+		var tag models.Tag
+		if err := rows.Scan(&tweetID, &tag.Id, &tag.Name); err != nil {
+			return nil, err
+		}
+		tagsByTweetID[tweetID] = append(tagsByTweetID[tweetID], &tag)
+	}
+
+	return tagsByTweetID, rows.Err()
 }
 
 func (t *TagRepositoryImpl) DeleteAssociationsByTweetID(ctx context.Context, tweetID int64) error {
