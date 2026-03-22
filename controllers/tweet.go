@@ -58,10 +58,23 @@ func (tc *TweetController) CreateTweet(w http.ResponseWriter, r *http.Request) {
 
 func (tc *TweetController) ListTweets(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	page, _ := strconv.Atoi(query.Get("page"))
-	pageSize, _ := strconv.Atoi(query.Get("page_size"))
-	
-	userId, _ := strconv.ParseInt(query.Get("user_id"), 10, 64)
+	page, err := parsePositiveIntQuery(query.Get("page"), "page", 1)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	pageSize, err := parsePositiveIntQuery(query.Get("page_size"), "page_size", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	userId, err := parsePositiveInt64Query(query.Get("user_id"), "user_id")
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	tag := query.Get("tag")
 	search := query.Get("q")
 
@@ -71,7 +84,14 @@ func (tc *TweetController) ListTweets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tweets fetched successfully", tweets)
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tweets fetched successfully", map[string]any{
+		"items": tweets,
+		"meta": paginationMeta{
+			Page:     page,
+			PageSize: pageSize,
+			Count:    len(tweets),
+		},
+	})
 }
 
 func (tc *TweetController) GetTweet(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +149,11 @@ func (tc *TweetController) UpdateTweet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch updated tweet to return
-	updated, _ := tc.TweetService.GetTweetByID(r.Context(), id)
+	updated, err := tc.TweetService.GetTweetByID(r.Context(), id)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tweet updated successfully", updated)
 }

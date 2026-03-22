@@ -21,8 +21,17 @@ func NewTagController(_tagService services.TagService) *TagController {
 }
 
 func (tc *TagController) ListTags(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	page, err := parsePositiveIntQuery(r.URL.Query().Get("page"), "page", 1)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	pageSize, err := parsePositiveIntQuery(r.URL.Query().Get("page_size"), "page_size", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	tags, err := tc.TagService.ListTags(r.Context(), page, pageSize)
 	if err != nil {
@@ -30,7 +39,14 @@ func (tc *TagController) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tags fetched successfully", tags)
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tags fetched successfully", map[string]any{
+		"items": tags,
+		"meta": paginationMeta{
+			Page:     page,
+			PageSize: pageSize,
+			Count:    len(tags),
+		},
+	})
 }
 
 func (tc *TagController) GetTagDetails(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +56,17 @@ func (tc *TagController) GetTagDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	page, err := parsePositiveIntQuery(r.URL.Query().Get("page"), "page", 1)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	pageSize, err := parsePositiveIntQuery(r.URL.Query().Get("page_size"), "page_size", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	tag, tweets, err := tc.TagService.GetTagWithTweets(r.Context(), id, page, pageSize)
 	if err != nil {
@@ -50,15 +75,26 @@ func (tc *TagController) GetTagDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"tag":    tag,
-		"tweets": tweets,
+		"tag": tag,
+		"tweets": map[string]any{
+			"items": tweets,
+			"meta": paginationMeta{
+				Page:     page,
+				PageSize: pageSize,
+				Count:    len(tweets),
+			},
+		},
 	}
 
 	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Tag details fetched successfully", response)
 }
 
 func (tc *TagController) GetPopularTags(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit, err := parsePositiveIntQuery(r.URL.Query().Get("limit"), "limit", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	tags, err := tc.TagService.GetPopularTags(r.Context(), limit)
 	if err != nil {
@@ -66,7 +102,13 @@ func (tc *TagController) GetPopularTags(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Popular tags fetched successfully", tags)
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Popular tags fetched successfully", map[string]any{
+		"items": tags,
+		"meta": limitMeta{
+			Limit: limit,
+			Count: len(tags),
+		},
+	})
 }
 
 func (tc *TagController) DeleteTag(w http.ResponseWriter, r *http.Request) {

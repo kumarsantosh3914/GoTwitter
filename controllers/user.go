@@ -163,8 +163,17 @@ func (uc *UserController) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (uc *UserController) ListUsers(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	page, err := parsePositiveIntQuery(r.URL.Query().Get("page"), "page", 1)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	pageSize, err := parsePositiveIntQuery(r.URL.Query().Get("page_size"), "page_size", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	users, err := uc.UserService.ListUsers(r.Context(), page, pageSize)
 	if err != nil {
@@ -172,7 +181,14 @@ func (uc *UserController) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Users fetched successfully", toUserResponses(users))
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, "Users fetched successfully", map[string]any{
+		"items": toUserResponses(users),
+		"meta": paginationMeta{
+			Page:     page,
+			PageSize: pageSize,
+			Count:    len(users),
+		},
+	})
 }
 
 func (uc *UserController) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +247,11 @@ func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch updated user to return
-	updated, _ := uc.UserService.GetUserByID(r.Context(), id)
+	updated, err := uc.UserService.GetUserByID(r.Context(), id)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 
 	utils.WriteJsonSuccessResponse(w, http.StatusOK, "User updated successfully", toUserResponse(updated))
 }
