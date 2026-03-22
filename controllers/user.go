@@ -192,6 +192,12 @@ func (uc *UserController) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	claims, ok := utils.GetUserFromContext(r.Context())
+	if !ok {
+		handleError(w, apperrors.NewAppError("unauthorized", http.StatusUnauthorized, nil))
+		return
+	}
+
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
@@ -219,7 +225,7 @@ func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Email:    payload.Email,
 	}
 
-	if err := uc.UserService.UpdateUser(r.Context(), user); err != nil {
+	if err := uc.UserService.UpdateUser(r.Context(), claims.UserID, user); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -231,13 +237,19 @@ func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (uc *UserController) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	claims, ok := utils.GetUserFromContext(r.Context())
+	if !ok {
+		handleError(w, apperrors.NewAppError("unauthorized", http.StatusUnauthorized, nil))
+		return
+	}
+
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
 		return
 	}
 
-	if err := uc.UserService.DeleteUser(r.Context(), id); err != nil {
+	if err := uc.UserService.DeleteUser(r.Context(), claims.UserID, id); err != nil {
 		handleError(w, err)
 		return
 	}

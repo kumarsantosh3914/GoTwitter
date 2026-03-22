@@ -14,8 +14,8 @@ type UserService interface {
 	Login(ctx context.Context, email string, password string) (*models.User, string, error)
 	ListUsers(ctx context.Context, page, pageSize int) ([]*models.User, error)
 	GetUserByID(ctx context.Context, id int64) (*models.User, error)
-	UpdateUser(ctx context.Context, user *models.User) error
-	DeleteUser(ctx context.Context, id int64) error
+	UpdateUser(ctx context.Context, actorID int64, user *models.User) error
+	DeleteUser(ctx context.Context, actorID int64, id int64) error
 }
 
 type UserServiceImpl struct {
@@ -119,9 +119,12 @@ func (u *UserServiceImpl) GetUserByID(ctx context.Context, id int64) (*models.Us
 	return user, nil
 }
 
-func (u *UserServiceImpl) UpdateUser(ctx context.Context, user *models.User) error {
+func (u *UserServiceImpl) UpdateUser(ctx context.Context, actorID int64, user *models.User) error {
 	if user == nil {
 		return apperrors.NewAppError("user is nil", http.StatusBadRequest, nil)
+	}
+	if actorID != user.Id {
+		return apperrors.NewAppError("unauthorized: only the account owner can update the user", http.StatusForbidden, nil)
 	}
 
 	// Check if user exists
@@ -155,7 +158,11 @@ func (u *UserServiceImpl) UpdateUser(ctx context.Context, user *models.User) err
 	return nil
 }
 
-func (u *UserServiceImpl) DeleteUser(ctx context.Context, id int64) error {
+func (u *UserServiceImpl) DeleteUser(ctx context.Context, actorID int64, id int64) error {
+	if actorID != id {
+		return apperrors.NewAppError("unauthorized: only the account owner can delete the user", http.StatusForbidden, nil)
+	}
+
 	// Check if user exists
 	existing, err := u.userRepository.GetByID(ctx, id)
 	if err != nil {
