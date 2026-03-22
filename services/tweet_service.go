@@ -1,10 +1,11 @@
 package services
 
 import (
-	apperrors "GoTwitter/errors"
 	db "GoTwitter/db/repositories"
+	apperrors "GoTwitter/errors"
 	"GoTwitter/models"
 	"context"
+	"database/sql"
 	"net/http"
 	"regexp"
 	"strings"
@@ -19,12 +20,14 @@ type TweetService interface {
 }
 
 type TweetServiceImpl struct {
+	db              *sql.DB
 	tweetRepository db.TweetRepository
 	tagRepository   db.TagRepository
 }
 
-func NewTweetService(_tweetRepository db.TweetRepository, _tagRepository db.TagRepository) TweetService {
+func NewTweetService(_db *sql.DB, _tweetRepository db.TweetRepository, _tagRepository db.TagRepository) TweetService {
 	return &TweetServiceImpl{
+		db:              _db,
 		tweetRepository: _tweetRepository,
 		tagRepository:   _tagRepository,
 	}
@@ -41,7 +44,16 @@ func (t *TweetServiceImpl) CreateTweet(ctx context.Context, tweet *models.Tweet)
 		return nil, apperrors.NewAppError("tweet content exceeds 280 characters", http.StatusBadRequest, nil)
 	}
 
-	createdTweet, err := t.tweetRepository.Create(ctx, tweet)
+	tx, err := t.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, apperrors.NewAppError("failed to start tweet transaction", http.StatusInternalServerError, err)
+	}
+	defer tx.Rollback()
+
+	txTweetRepository := db.NewTweetRepository(tx)
+	txTagRepository := db.NewTagRepository(tx)
+
+	createdTweet, err := txTweetRepository.Create(ctx, tweet)
 	if err != nil {
 		return nil, apperrors.NewAppError("failed to create tweet", http.StatusInternalServerError, err)
 	}
@@ -49,22 +61,31 @@ func (t *TweetServiceImpl) CreateTweet(ctx context.Context, tweet *models.Tweet)
 	// Extract and associate hashtags
 	hashtags := extractHashtags(tweet.Tweet)
 	for _, h := range hashtags {
-		tag, err := t.tagRepository.GetByName(ctx, h)
+		tag, err := txTagRepository.GetByName(ctx, h)
 		if err != nil {
-			continue
+			return nil, apperrors.NewAppError("failed to fetch tag", http.StatusInternalServerError, err)
 		}
 		if tag == nil {
-			tag, err = t.tagRepository.Create(ctx, &models.Tag{Name: h})
+			tag, err = txTagRepository.Create(ctx, &models.Tag{Name: h})
 			if err != nil {
-				continue
+				return nil, apperrors.NewAppError("failed to create tag", http.StatusInternalServerError, err)
 			}
 		}
-		_ = t.tagRepository.AssociateWithTweet(ctx, createdTweet.Id, tag.Id)
+		if err := txTagRepository.AssociateWithTweet(ctx, createdTweet.Id, tag.Id); err != nil {
+			return nil, apperrors.NewAppError("failed to associate tag with tweet", http.StatusInternalServerError, err)
+		}
 	}
 
 	// Fetch tags to include in response
-	tags, _ := t.tagRepository.GetByTweetID(ctx, createdTweet.Id)
+	tags, err := txTagRepository.GetByTweetID(ctx, createdTweet.Id)
+	if err != nil {
+		return nil, apperrors.NewAppError("failed to fetch tweet tags", http.StatusInternalServerError, err)
+	}
 	createdTweet.Tags = tags
+
+	if err := tx.Commit(); err != nil {
+		return nil, apperrors.NewAppError("failed to commit tweet transaction", http.StatusInternalServerError, err)
+	}
 
 	return createdTweet, nil
 }
@@ -114,8 +135,17 @@ func (t *TweetServiceImpl) UpdateTweet(ctx context.Context, tweet *models.Tweet)
 		return apperrors.NewAppError("tweet content exceeds 280 characters", http.StatusBadRequest, nil)
 	}
 
+	tx, err := t.db.BeginTx(ctx, nil)
+	if err != nil {
+		return apperrors.NewAppError("failed to start tweet transaction", http.StatusInternalServerError, err)
+	}
+	defer tx.Rollback()
+
+	txTweetRepository := db.NewTweetRepository(tx)
+	txTagRepository := db.NewTagRepository(tx)
+
 	// Check if tweet exists
-	existing, err := t.tweetRepository.GetByID(ctx, tweet.Id)
+	existing, err := txTweetRepository.GetByID(ctx, tweet.Id)
 	if err != nil {
 		return apperrors.NewAppError("failed to fetch tweet", http.StatusInternalServerError, err)
 	}
@@ -128,25 +158,33 @@ func (t *TweetServiceImpl) UpdateTweet(ctx context.Context, tweet *models.Tweet)
 		return apperrors.NewAppError("unauthorized: only the author can update the tweet", http.StatusForbidden, nil)
 	}
 
-	if err := t.tweetRepository.Update(ctx, tweet); err != nil {
+	if err := txTweetRepository.Update(ctx, tweet); err != nil {
 		return apperrors.NewAppError("failed to update tweet", http.StatusInternalServerError, err)
 	}
 
 	// Update hashtag associations: clear old ones and add new ones
-	_ = t.tagRepository.DeleteAssociationsByTweetID(ctx, tweet.Id)
+	if err := txTagRepository.DeleteAssociationsByTweetID(ctx, tweet.Id); err != nil {
+		return apperrors.NewAppError("failed to clear tweet tag associations", http.StatusInternalServerError, err)
+	}
 	hashtags := extractHashtags(tweet.Tweet)
 	for _, h := range hashtags {
-		tag, err := t.tagRepository.GetByName(ctx, h)
+		tag, err := txTagRepository.GetByName(ctx, h)
 		if err != nil {
-			continue
+			return apperrors.NewAppError("failed to fetch tag", http.StatusInternalServerError, err)
 		}
 		if tag == nil {
-			tag, err = t.tagRepository.Create(ctx, &models.Tag{Name: h})
+			tag, err = txTagRepository.Create(ctx, &models.Tag{Name: h})
 			if err != nil {
-				continue
+				return apperrors.NewAppError("failed to create tag", http.StatusInternalServerError, err)
 			}
 		}
-		_ = t.tagRepository.AssociateWithTweet(ctx, tweet.Id, tag.Id)
+		if err := txTagRepository.AssociateWithTweet(ctx, tweet.Id, tag.Id); err != nil {
+			return apperrors.NewAppError("failed to associate tag with tweet", http.StatusInternalServerError, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return apperrors.NewAppError("failed to commit tweet transaction", http.StatusInternalServerError, err)
 	}
 
 	return nil
@@ -176,10 +214,10 @@ func (t *TweetServiceImpl) DeleteTweet(ctx context.Context, id int64, userId int
 func extractHashtags(text string) []string {
 	re := regexp.MustCompile(`#[a-zA-Z0-9_]+`)
 	matches := re.FindAllString(text, -1)
-	
+
 	uniqueTags := make(map[string]bool)
 	var tags []string
-	
+
 	for _, match := range matches {
 		tag := strings.ToLower(strings.TrimPrefix(match, "#"))
 		if !uniqueTags[tag] {
@@ -187,6 +225,6 @@ func extractHashtags(text string) []string {
 			tags = append(tags, tag)
 		}
 	}
-	
+
 	return tags
 }

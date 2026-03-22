@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+type queryExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
 type TweetRepository interface {
 	Create(ctx context.Context, tweet *models.Tweet) (*models.Tweet, error)
 	GetByID(ctx context.Context, id int64) (*models.Tweet, error)
@@ -17,10 +23,10 @@ type TweetRepository interface {
 }
 
 type TweetRepositoryImpl struct {
-	db *sql.DB
+	db queryExecutor
 }
 
-func NewTweetRepository(_db *sql.DB) TweetRepository {
+func NewTweetRepository(_db queryExecutor) TweetRepository {
 	return &TweetRepositoryImpl{
 		db: _db,
 	}
@@ -96,7 +102,7 @@ func (t *TweetRepositoryImpl) GetAll(ctx context.Context, limit, offset int, use
 
 	query := `SELECT DISTINCT t.id, t.user_id, t.tweet, t.created_at, t.updated_at
 			  FROM tweets t`
-	
+
 	var conditions []string
 	var args []interface{}
 

@@ -46,7 +46,7 @@ func (app *Application) Run() error {
 	uc := controllers.NewUserController(us)
 	uRouter := router.NewUserRouter(uc)
 
-	ts := services.NewTweetService(app.Store.TweetRepository, app.Store.TagRepository)
+	ts := services.NewTweetService(app.Store.DB, app.Store.TweetRepository, app.Store.TagRepository)
 	tc := controllers.NewTweetController(ts)
 	tRouter := router.NewTweetRouter(tc)
 
@@ -55,8 +55,8 @@ func (app *Application) Run() error {
 	tagRouter := router.NewTagRouter(tagc)
 
 	server := &http.Server{
-	        Addr:         app.Config.Addr,
-	        Handler:      router.SetupRouter(uRouter, tRouter, tagRouter),		ReadTimeout:  10 * time.Second, // Set read timeout to 10 seconds
+		Addr:    app.Config.Addr,
+		Handler: router.SetupRouter(uRouter, tRouter, tagRouter), ReadTimeout: 10 * time.Second, // Set read timeout to 10 seconds
 		WriteTimeout: 10 * time.Second, // Set write timeout to 10 seconds
 		IdleTimeout:  10 * time.Second, // Set idle timeout to 10 seconds
 	}

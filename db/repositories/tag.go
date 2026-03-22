@@ -13,7 +13,7 @@ type TagRepository interface {
 	AssociateWithTweet(ctx context.Context, tweetID int64, tagID int64) error
 	GetByTweetID(ctx context.Context, tweetID int64) ([]*models.Tag, error)
 	DeleteAssociationsByTweetID(ctx context.Context, tweetID int64) error
-	
+
 	// New methods for Tag Management
 	GetAll(ctx context.Context, limit, offset int) ([]*models.Tag, error)
 	GetByID(ctx context.Context, id int64) (*models.Tag, error)
@@ -23,10 +23,10 @@ type TagRepository interface {
 }
 
 type TagRepositoryImpl struct {
-	db *sql.DB
+	db queryExecutor
 }
 
-func NewTagRepository(_db *sql.DB) TagRepository {
+func NewTagRepository(_db queryExecutor) TagRepository {
 	return &TagRepositoryImpl{
 		db: _db,
 	}
