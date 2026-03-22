@@ -6,18 +6,19 @@ A robust, Twitter-like RESTful API built with Go, focusing on clean architecture
 
 ### 👤 User Management
 - **Authentication**: JWT-based authentication using HTTP-only cookies.
-- **Profiles**: Signup, login, logout, and full CRUD for user profiles.
+- **Profiles**: Signup, login, logout, user listing/detail, and protected self-service profile updates/deletes.
 
 ### 🐦 Tweet Management
 - **Creation**: Create tweets with a **280-character limit**.
 - **Hashtag System**: **Automatic extraction** of `#hashtags` from tweet content.
-- **Discovery**: List tweets with advanced filtering by `user_id`, `tag`, or search query (`q`).
+- **Discovery**: List tweets with advanced filtering by `user_id`, `tag`, or search query (`q`) and pagination metadata.
 - **Control**: Update and delete tweets (restricted to the original author).
+- **Consistency**: Tweet and hashtag writes are handled transactionally.
 
 ### 🏷️ Tag Management
 - **Popularity**: Track and retrieve the most used hashtags in the system.
 - **Association**: Get all tweets associated with a specific hashtag.
-- **Maintenance**: List and manage tags independently.
+- **Maintenance**: List tags publicly and delete tags through authenticated routes.
 
 ---
 
@@ -74,22 +75,51 @@ The server will start on `http://localhost:3001`.
 | `POST` | `/login` | Login and receive an auth cookie |
 | `POST` | `/logout` | Clear the auth cookie |
 
+### Users
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/users` | No | List users (paginated) |
+| `GET` | `/users/{id}` | No | Get user details |
+| `PUT` | `/users/{id}` | Yes | Update own profile |
+| `DELETE` | `/users/{id}` | Yes | Delete own profile |
+
 ### Tweets
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/tweets` | Yes | Create a tweet (auto-extracts tags) |
-| `GET` | `/tweets` | No | List tweets (filters: `user_id`, `tag`, `q`) |
+| `GET` | `/tweets` | No | List tweets (filters: `user_id`, `tag`, `q`; paginated metadata) |
 | `GET` | `/tweets/{id}` | No | Get detailed tweet info |
 | `PUT` | `/tweets/{id}` | Yes | Update tweet (Author only) |
 | `DELETE` | `/tweets/{id}` | Yes | Delete tweet (Author only) |
 
 ### Tags
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/tags` | List all tags (paginated) |
-| `GET` | `/tags/popular` | Get top hashtags by usage count |
-| `GET` | `/tags/{id}` | Get tag details and associated tweets |
-| `DELETE` | `/tags/{id}` | Delete a tag |
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/tags` | No | List all tags (paginated) |
+| `GET` | `/tags/popular` | No | Get top hashtags by usage count |
+| `GET` | `/tags/{id}` | No | Get tag details and associated tweets (paginated tweets metadata) |
+| `DELETE` | `/tags/{id}` | Yes | Delete a tag |
+
+### Response Shape
+
+List endpoints now return a consistent envelope with `items` and `meta`:
+
+```json
+{
+  "status": "success",
+  "message": "Tweets fetched successfully",
+  "data": {
+    "items": [],
+    "meta": {
+      "page": 1,
+      "page_size": 10,
+      "count": 0
+    }
+  }
+}
+```
+
+`GET /tags/popular` uses a similar envelope, but the metadata contains `limit` and `count`.
 
 ---
 
@@ -108,6 +138,35 @@ curl -X POST http://localhost:3001/tweets \
 curl -G "http://localhost:3001/tweets" \
   -d "tag=backend" \
   -d "q=clone"
+```
+
+### List Tweets Response
+```json
+{
+  "status": "success",
+  "message": "Tweets fetched successfully",
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "tweet": "Building a #Twitter clone in #Go is fun! #backend",
+        "created_at": "2026-03-22T10:00:00Z",
+        "updated_at": "2026-03-22T10:00:00Z",
+        "tags": [
+          { "id": 1, "name": "twitter" },
+          { "id": 2, "name": "go" },
+          { "id": 3, "name": "backend" }
+        ]
+      }
+    ],
+    "meta": {
+      "page": 1,
+      "page_size": 10,
+      "count": 1
+    }
+  }
+}
 ```
 
 ---
