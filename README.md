@@ -1,113 +1,301 @@
 # GoTwitter API
 
-A robust, Twitter-like RESTful API built with Go, focusing on clean architecture, performance, and a seamless hashtag system.
+A Twitter-like REST API built with Go, Chi, and MySQL. The application supports authentication with HTTP-only cookie-based JWTs, tweet CRUD, hashtag extraction, likes, retweets, replies with threaded conversations, follow relationships, and S3 media uploads via presigned URLs.
 
-## 🚀 Features
+## Features
 
-### 👤 User Management
-- **Authentication**: JWT-based authentication using HTTP-only cookies.
-- **Profiles**: Signup, login, logout, user listing/detail, and protected self-service profile updates/deletes.
+### Authentication and users
+- Signup, login, and logout
+- JWT authentication stored in an HTTP-only `auth_token` cookie
+- Public user listing and profile lookup
+- Protected self-service user update and delete
+- Follow and unfollow relationships
+- Follower and following lists
+- User response metadata including `follower_count`, `following_count`, and viewer-specific `is_following`
 
-### 🐦 Tweet Management
-- **Creation**: Create tweets with a **280-character limit**.
-- **Hashtag System**: **Automatic extraction** of `#hashtags` from tweet content.
-- **Discovery**: List tweets with advanced filtering by `user_id`, `tag`, or search query (`q`) and pagination metadata.
-- **Control**: Update and delete tweets (restricted to the original author).
-- **Consistency**: Tweet and hashtag writes are handled transactionally.
+### Tweets
+- Create, list, fetch, update, and delete tweets
+- 280 character tweet validation
+- Automatic hashtag extraction and association
+- Filtering by `user_id`, `tag`, and search query `q`
+- Like and unlike tweets
+- Retweet and unretweet tweets
+- Reply to a tweet with `parent_tweet_id`
+- Nested replies on `GET /tweets/{id}`
+- Thread view on `GET /tweets/{id}/thread`
+- Tweet response metadata including `like_count`, `retweet_count`, `reply_count`, `is_liked`, and `is_retweeted`
 
-### 🏷️ Tag Management
-- **Popularity**: Track and retrieve the most used hashtags in the system.
-- **Association**: Get all tweets associated with a specific hashtag.
-- **Maintenance**: List tags publicly and delete tags through authenticated routes.
+### Media
+- Create S3 presigned upload URLs through the API
+- Persist media metadata before upload
+- Attach uploaded media to tweets using `media_ids`
+- Support for up to 4 media attachments per tweet
 
----
+### Tags
+- Public tag listing
+- Popular tags by usage count
+- Tag details with paginated associated tweets
+- Authenticated tag deletion
 
-## 🛠️ Tech Stack
+## Tech stack
 
-- **Language**: Go (1.22+)
-- **Router**: [go-chi/chi](https://github.com/go-chi/chi)
-- **Database**: MySQL
-- **Migrations**: [goose](https://github.com/pressly/goose)
-- **Validation**: [go-playground/validator](https://github.com/go-playground/validator)
-- **Auth**: JWT (JSON Web Tokens)
+- Go 1.25
+- Chi router
+- MySQL
+- Goose migrations
+- go-playground validator
+- JWT
+- AWS SDK for Go v2 for S3 presigning
 
----
-
-## 🏁 Getting Started
+## Getting started
 
 ### Prerequisites
-- Go installed on your machine.
-- MySQL server running.
-- `goose` installed (optional, for manual migrations).
 
-### 1. Environment Setup
-Create a `.env` file in the root directory (refer to `.env.example` if available):
+- Go installed locally
+- MySQL running locally or remotely
+- `goose` installed if you want to run migrations manually
+
+### Environment
+
+Create a `.env` file in the project root.
+
 ```env
-PORT=3001
+# Server
+PORT=8080
+
+# Database
 DB_ADDR=127.0.0.1:3306
 DB_USER=root
 DB_PASSWORD=yourpassword
 DB_NAME=twitter_dev
+DB_NET=tcp
+
+# Auth
 JWT_SECRET=your_super_secret_key
+COOKIE_SECURE=false
+
+# AWS S3 media uploads
+AWS_REGION=ap-south-1
+AWS_S3_BUCKET=twitter-bucket
+AWS_ACCESS_KEY_ID=your_access_key_id
+AWS_SECRET_ACCESS_KEY=your_secret_access_key
+AWS_S3_PUBLIC_BASE_URL=
 ```
 
-### 2. Database Migrations
-Run the migrations to set up your schema:
+Notes:
+- `PORT` can be `8080` or `:8080`. The app normalizes it.
+- `AWS_S3_PUBLIC_BASE_URL` is optional. If empty, the app uses `https://<bucket>.s3.<region>.amazonaws.com`.
+- If the AWS variables are missing, `POST /media/presign` returns `501 Not Implemented`.
+- The env loader supports both `#` and `//` comment lines.
+
+### Install dependencies
+
 ```bash
-# Using makefile (if goose is installed)
+go mod tidy
+```
+
+### Run migrations
+
+```bash
 make migrate-up
 ```
 
-### 3. Run the Application
+### Start the server
+
 ```bash
 go run main.go
 ```
-The server will start on `http://localhost:3001`.
 
----
+By default the API listens on `http://localhost:8080`.
 
-## 📖 API Documentation
+## Authentication model
 
-### Authentication
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/signup` | Register a new user |
-| `POST` | `/login` | Login and receive an auth cookie |
-| `POST` | `/logout` | Clear the auth cookie |
+Protected endpoints require the `auth_token` cookie. The simplest manual test flow is to store cookies in a file:
 
-### Users
+```bash
+BASE="http://localhost:8080"
+COOKIE_JAR="./cookies.txt"
+```
+
+Login example:
+
+```bash
+curl -i -X POST "$BASE/login" \
+  -H "Content-Type: application/json" \
+  -c "$COOKIE_JAR" \
+  -d '{
+    "email": "alice@example.com",
+    "password": "password123"
+  }'
+```
+
+Then call protected routes with:
+
+```bash
+-b "$COOKIE_JAR"
+```
+
+## API reference
+
+### Health
+
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/users` | No | List users (paginated) |
+| `GET` | `/ping` | No | Health check |
+
+### Auth
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/signup` | No | Register a user and issue an auth cookie |
+| `POST` | `/login` | No | Login and issue an auth cookie |
+| `POST` | `/logout` | No | Clear the auth cookie |
+
+### Users
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/users` | No | List users |
 | `GET` | `/users/{id}` | No | Get user details |
 | `PUT` | `/users/{id}` | Yes | Update own profile |
 | `DELETE` | `/users/{id}` | Yes | Delete own profile |
+| `GET` | `/users/{id}/followers` | No | List followers |
+| `GET` | `/users/{id}/following` | No | List followed users |
+| `POST` | `/users/{id}/follow` | Yes | Follow a user |
+| `DELETE` | `/users/{id}/follow` | Yes | Unfollow a user |
 
 ### Tweets
+
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/tweets` | Yes | Create a tweet (auto-extracts tags) |
-| `GET` | `/tweets` | No | List tweets (filters: `user_id`, `tag`, `q`; paginated metadata) |
-| `GET` | `/tweets/{id}` | No | Get detailed tweet info |
-| `PUT` | `/tweets/{id}` | Yes | Update tweet (Author only) |
-| `DELETE` | `/tweets/{id}` | Yes | Delete tweet (Author only) |
+| `POST` | `/tweets/` | Yes | Create a tweet or reply |
+| `GET` | `/tweets/` | No | List tweets |
+| `GET` | `/tweets/{id}` | No | Get a tweet with nested replies |
+| `GET` | `/tweets/{id}/thread` | No | Get the tweet plus its parent chain |
+| `PUT` | `/tweets/{id}` | Yes | Update own tweet |
+| `DELETE` | `/tweets/{id}` | Yes | Delete own tweet |
+| `POST` | `/tweets/{id}/like` | Yes | Like a tweet |
+| `DELETE` | `/tweets/{id}/like` | Yes | Unlike a tweet |
+| `POST` | `/tweets/{id}/retweet` | Yes | Retweet a tweet |
+| `DELETE` | `/tweets/{id}/retweet` | Yes | Undo a retweet |
+
+List filters for `GET /tweets/`:
+- `page`
+- `page_size`
+- `user_id`
+- `tag`
+- `q`
+
+### Media
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/media/presign` | Yes | Create a presigned S3 upload URL and attachment record |
 
 ### Tags
+
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/tags` | No | List all tags (paginated) |
-| `GET` | `/tags/popular` | No | Get top hashtags by usage count |
-| `GET` | `/tags/{id}` | No | Get tag details and associated tweets (paginated tweets metadata) |
+| `GET` | `/tags/` | No | List tags |
+| `GET` | `/tags/popular` | No | List popular tags |
+| `GET` | `/tags/{id}` | No | Get tag details and tagged tweets |
 | `DELETE` | `/tags/{id}` | Yes | Delete a tag |
 
-### Response Shape
+## Request examples
 
-List endpoints now return a consistent envelope with `items` and `meta`:
+### Signup
+
+```bash
+curl -i -X POST "$BASE/signup" \
+  -H "Content-Type: application/json" \
+  -c "$COOKIE_JAR" \
+  -d '{
+    "username": "alice",
+    "email": "alice@example.com",
+    "password": "password123"
+  }'
+```
+
+### Create a tweet
+
+```bash
+curl -i -X POST "$BASE/tweets/" \
+  -H "Content-Type: application/json" \
+  -b "$COOKIE_JAR" \
+  -d '{
+    "tweet": "hello from GoTwitter #golang"
+  }'
+```
+
+### Reply to a tweet
+
+```bash
+curl -i -X POST "$BASE/tweets/" \
+  -H "Content-Type: application/json" \
+  -b "$COOKIE_JAR" \
+  -d '{
+    "tweet": "this is a reply",
+    "parent_tweet_id": 1
+  }'
+```
+
+### Like and retweet
+
+```bash
+curl -i -X POST "$BASE/tweets/1/like" -b "$COOKIE_JAR"
+curl -i -X POST "$BASE/tweets/1/retweet" -b "$COOKIE_JAR"
+```
+
+### Follow a user
+
+```bash
+curl -i -X POST "$BASE/users/2/follow" \
+  -b "$COOKIE_JAR"
+```
+
+### Create a presigned upload
+
+```bash
+curl -i -X POST "$BASE/media/presign" \
+  -H "Content-Type: application/json" \
+  -b "$COOKIE_JAR" \
+  -d '{
+    "filename": "photo.png",
+    "content_type": "image/png",
+    "size_bytes": 2048
+  }'
+```
+
+After that, upload the file directly to the returned `upload_url` using `PUT`, then attach the returned `attachment.id` to a tweet:
+
+```bash
+curl -i -X POST "$BASE/tweets/" \
+  -H "Content-Type: application/json" \
+  -b "$COOKIE_JAR" \
+  -d '{
+    "tweet": "tweet with image #photo",
+    "media_ids": [1]
+  }'
+```
+
+## Response shape
+
+Successful responses use a consistent envelope:
 
 ```json
 {
   "status": "success",
   "message": "Tweets fetched successfully",
+  "data": {}
+}
+```
+
+Paginated list responses use:
+
+```json
+{
+  "status": "success",
+  "message": "Users fetched successfully",
   "data": {
     "items": [],
     "meta": {
@@ -119,64 +307,47 @@ List endpoints now return a consistent envelope with `items` and `meta`:
 }
 ```
 
-`GET /tags/popular` uses a similar envelope, but the metadata contains `limit` and `count`.
+Popular tags use:
 
----
-
-## 🧪 Example Usage
-
-### Create a Tweet
-```bash
-curl -X POST http://localhost:3001/tweets \
-  -H "Content-Type: application/json" \
-  -b cookies.txt \
-  -d '{"tweet": "Building a #Twitter clone in #Go is fun! #backend"}'
-```
-
-### Search for Tweets
-```bash
-curl -G "http://localhost:3001/tweets" \
-  -d "tag=backend" \
-  -d "q=clone"
-```
-
-### List Tweets Response
 ```json
 {
   "status": "success",
-  "message": "Tweets fetched successfully",
+  "message": "Popular tags fetched successfully",
   "data": {
-    "items": [
-      {
-        "id": 1,
-        "user_id": 1,
-        "tweet": "Building a #Twitter clone in #Go is fun! #backend",
-        "created_at": "2026-03-22T10:00:00Z",
-        "updated_at": "2026-03-22T10:00:00Z",
-        "tags": [
-          { "id": 1, "name": "twitter" },
-          { "id": 2, "name": "go" },
-          { "id": 3, "name": "backend" }
-        ]
-      }
-    ],
+    "items": [],
     "meta": {
-      "page": 1,
-      "page_size": 10,
-      "count": 1
+      "limit": 10,
+      "count": 0
     }
   }
 }
 ```
 
----
+## Important behavior notes
 
-## 📂 Project Structure
-- `/app`: Application bootstrapping and DI.
-- `/controllers`: Request handlers and payload validation.
-- `/services`: Business logic and orchestration.
-- `/db/repositories`: Database abstraction layer (SQL queries).
-- `/models`: Domain entities (Structs).
-- `/router`: Route definitions and middleware.
-- `/utils`: Helpers for JWT, hashing, and JSON.
-- `/migrations`: SQL migration files.
+- Tweet list endpoints currently return top-level tweets only. Replies are fetched through `GET /tweets/{id}` and `GET /tweets/{id}/thread`.
+- The authenticated user can only update or delete their own user account and tweets.
+- A user cannot follow themselves.
+- Media attachments must belong to the authenticated user before they can be attached to a tweet.
+- A tweet can include at most 4 media attachments.
+- Hashtags are normalized to lowercase.
+
+## Project structure
+
+- `app/`: application bootstrapping and dependency wiring
+- `config/`: env and database configuration
+- `controllers/`: HTTP handlers and payload validation
+- `services/`: business logic
+- `db/repositories/`: SQL-backed repository layer
+- `models/`: domain models and response entities
+- `router/`: route registration and middleware
+- `utils/`: auth, validation, and JSON helpers
+- `migrations/`: database migrations
+
+## Verification
+
+Current codebase verification:
+
+```bash
+go test ./...
+```

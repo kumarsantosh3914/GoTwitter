@@ -4,17 +4,21 @@ import "database/sql"
 
 // Facilitates dependency injection for repository
 type Storage struct {
-        DB             *sql.DB
-        UserRepository UserRepository
-        TweetRepository TweetRepository
-        TagRepository  TagRepository
+	DB               *sql.DB
+	UserRepository   UserRepository
+	TweetRepository  TweetRepository
+	TagRepository    TagRepository
+	SocialRepository SocialRepository
+	MediaRepository  MediaRepository
 }
 
 func NewStorage(db *sql.DB) *Storage {
-        return &Storage{
-                DB:             db,
-                UserRepository: NewUserRepository(db),
-                TweetRepository: NewTweetRepository(db),
-                TagRepository:  NewTagRepository(db),
-        }
+	return &Storage{
+		DB:               db,
+		UserRepository:   NewUserRepository(db),
+		TweetRepository:  NewTweetRepository(db),
+		TagRepository:    NewTagRepository(db),
+		SocialRepository: NewSocialRepository(db),
+		MediaRepository:  NewMediaRepository(db),
+	}
 }

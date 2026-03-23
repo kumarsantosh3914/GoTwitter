@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"net/http"
 	"time"
 )
 
@@ -16,6 +17,20 @@ const UserContextKey contextKey = "user"
 func GetUserFromContext(ctx context.Context) (*Claims, bool) {
 	claims, ok := ctx.Value(UserContextKey).(*Claims)
 	return claims, ok
+}
+
+func GetUserFromRequest(r *http.Request) (*Claims, bool) {
+	cookie, err := r.Cookie("auth_token")
+	if err != nil {
+		return nil, false
+	}
+
+	claims, err := ParseJWT(cookie.Value)
+	if err != nil {
+		return nil, false
+	}
+
+	return claims, true
 }
 
 func HashPassword(plainPassword string) (string, error) {

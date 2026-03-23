@@ -1,20 +1,25 @@
 package env
 
 import (
+	"bufio"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/joho/godotenv"
 )
 
 var loadOnce sync.Once
 
 func Load() {
 	loadOnce.Do(func() {
-		// Overload so local `.env` always wins over existing env vars.
-		if err := godotenv.Overload(".env"); err != nil {
+		envPath, ok := findEnvFile()
+		if !ok {
+			log.Printf("[WARN] .env not loaded: %v", os.ErrNotExist)
+			return
+		}
+
+		if err := loadEnvFile(envPath); err != nil {
 			log.Printf("[WARN] .env not loaded: %v", err)
 			return
 		}
@@ -31,4 +36,58 @@ func GetString(key string, fallback string) string {
 	}
 
 	return value
+}
+
+func findEnvFile() (string, bool) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, true
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+func loadEnvFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			continue
+		}
+
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		if key == "" {
+			continue
+		}
+
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+
+	return scanner.Err()
 }

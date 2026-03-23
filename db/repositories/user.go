@@ -5,11 +5,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type UserRepository interface {
 	Create(ctx context.Context, user *models.User) (*models.User, error)
 	GetByID(ctx context.Context, id int64) (*models.User, error)
+	GetByIDs(ctx context.Context, ids []int64) ([]*models.User, error)
 	GetAll(ctx context.Context, limit, offset int) ([]*models.User, error)
 	Update(ctx context.Context, user *models.User) error
 	DeleteByID(ctx context.Context, id int64) error
@@ -71,14 +74,16 @@ func (u *UserRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Use
 	}
 
 	var user models.User
-	err := u.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password, created_at, updated_at
-		 FROM users
-		 WHERE id = ?
-		 LIMIT 1`,
-		id,
-	).Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := u.db.QueryRowContext(ctx, userSelectQuery(`WHERE u.id = ? LIMIT 1`), id).Scan(
+		&user.Id,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.FollowerCount,
+		&user.FollowingCount,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -86,6 +91,40 @@ func (u *UserRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Use
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (u *UserRepositoryImpl) GetByIDs(ctx context.Context, ids []int64) ([]*models.User, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if u.db == nil {
+		return nil, errors.New("db is nil")
+	}
+	if len(ids) == 0 {
+		return []*models.User{}, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]interface{}, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	rows, err := u.db.QueryContext(ctx, fmt.Sprintf("%s WHERE u.id IN (%s) ORDER BY u.id DESC", userSelectQuery(""), placeholders), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
 }
 
 func (u *UserRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]*models.User, error) {
@@ -98,10 +137,7 @@ func (u *UserRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]*
 
 	rows, err := u.db.QueryContext(
 		ctx,
-		`SELECT id, username, email, password, created_at, updated_at
-		 FROM users
-		 ORDER BY id DESC
-		 LIMIT ? OFFSET ?`,
+		userSelectQuery(`ORDER BY u.id DESC LIMIT ? OFFSET ?`),
 		limit,
 		offset,
 	)
@@ -112,11 +148,11 @@ func (u *UserRepositoryImpl) GetAll(ctx context.Context, limit, offset int) ([]*
 
 	var users []*models.User
 	for rows.Next() {
-		var user models.User
-		if err := rows.Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt); err != nil {
+		user, err := scanUser(rows)
+		if err != nil {
 			return nil, err
 		}
-		users = append(users, &user)
+		users = append(users, user)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -167,14 +203,16 @@ func (u *UserRepositoryImpl) GetUserByEmail(ctx context.Context, email string) (
 	}
 
 	var user models.User
-	err := u.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password, created_at, updated_at
-		 FROM users
-		 WHERE email = ?
-		 LIMIT 1`,
-		email,
-	).Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := u.db.QueryRowContext(ctx, userSelectQuery(`WHERE u.email = ? LIMIT 1`), email).Scan(
+		&user.Id,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.FollowerCount,
+		&user.FollowingCount,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -193,18 +231,52 @@ func (u *UserRepositoryImpl) GetUserByUsername(ctx context.Context, username str
 	}
 
 	var user models.User
-	err := u.db.QueryRowContext(
-		ctx,
-		`SELECT id, username, email, password, created_at, updated_at
-		 FROM users
-		 WHERE username = ?
-		 LIMIT 1`,
-		username,
-	).Scan(&user.Id, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt)
+	err := u.db.QueryRowContext(ctx, userSelectQuery(`WHERE u.username = ? LIMIT 1`), username).Scan(
+		&user.Id,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.FollowerCount,
+		&user.FollowingCount,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func userSelectQuery(suffix string) string {
+	return `SELECT
+		u.id,
+		u.username,
+		u.email,
+		u.password,
+		u.created_at,
+		u.updated_at,
+		(SELECT COUNT(*) FROM user_follows uf WHERE uf.followee_id = u.id) AS follower_count,
+		(SELECT COUNT(*) FROM user_follows uf WHERE uf.follower_id = u.id) AS following_count
+	FROM users u ` + suffix
+}
+
+func scanUser(scanner interface {
+	Scan(dest ...interface{}) error
+}) (*models.User, error) {
+	var user models.User
+	if err := scanner.Scan(
+		&user.Id,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.FollowerCount,
+		&user.FollowingCount,
+	); err != nil {
 		return nil, err
 	}
 	return &user, nil

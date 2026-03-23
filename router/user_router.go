@@ -24,11 +24,15 @@ func (ur *UserRouter) Register(r chi.Router) {
 	r.Route("/users", func(r chi.Router) {
 		r.Get("/", ur.userController.ListUsers)
 		r.Get("/{id}", ur.userController.GetUser)
+		r.Get("/{id}/followers", ur.userController.ListFollowers)
+		r.Get("/{id}/following", ur.userController.ListFollowing)
 
 		r.Group(func(r chi.Router) {
 			r.Use(AuthMiddleware)
 			r.Put("/{id}", ur.userController.UpdateUser)
 			r.Delete("/{id}", ur.userController.DeleteUser)
+			r.Post("/{id}/follow", ur.userController.FollowUser)
+			r.Delete("/{id}/follow", ur.userController.UnfollowUser)
 		})
 	})
 }

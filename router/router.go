@@ -12,7 +12,7 @@ type Router interface {
 	Register(r chi.Router)
 }
 
-func SetupRouter(UserRouter Router, TweetRouter Router, TagRouter Router) *chi.Mux {
+func SetupRouter(UserRouter Router, TweetRouter Router, TagRouter Router, MediaRouter Router) *chi.Mux {
 	chiRouter := chi.NewRouter()
 
 	chiRouter.Use(cors.Handler(cors.Options{
@@ -31,6 +31,7 @@ func SetupRouter(UserRouter Router, TweetRouter Router, TagRouter Router) *chi.M
 	UserRouter.Register(chiRouter)
 	TweetRouter.Register(chiRouter)
 	TagRouter.Register(chiRouter)
+	MediaRouter.Register(chiRouter)
 
 	return chiRouter
 }

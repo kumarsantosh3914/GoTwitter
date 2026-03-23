@@ -226,7 +226,10 @@ func (t *TagRepositoryImpl) GetByID(ctx context.Context, id int64) (*models.Tag,
 
 func (t *TagRepositoryImpl) GetTweetsByTagID(ctx context.Context, tagID int64, limit, offset int) ([]*models.Tweet, error) {
 	rows, err := t.db.QueryContext(ctx, `
-		SELECT tw.id, tw.user_id, tw.tweet, tw.created_at, tw.updated_at
+		SELECT tw.id, tw.user_id, tw.parent_tweet_id, tw.tweet, tw.created_at, tw.updated_at,
+		       (SELECT COUNT(*) FROM tweet_likes tl WHERE tl.tweet_id = tw.id) AS like_count,
+		       (SELECT COUNT(*) FROM tweet_retweets tr WHERE tr.tweet_id = tw.id) AS retweet_count,
+		       (SELECT COUNT(*) FROM tweets replies WHERE replies.parent_tweet_id = tw.id) AS reply_count
 		FROM tweets tw
 		JOIN tweet_tags tt ON tw.id = tt.tweet_id
 		WHERE tt.tag_id = ?
@@ -239,11 +242,11 @@ func (t *TagRepositoryImpl) GetTweetsByTagID(ctx context.Context, tagID int64, l
 
 	var tweets []*models.Tweet
 	for rows.Next() {
-		var tw models.Tweet
-		if err := rows.Scan(&tw.Id, &tw.UserId, &tw.Tweet, &tw.CreatedAt, &tw.UpdatedAt); err != nil {
+		tw, err := scanTweet(rows)
+		if err != nil {
 			return nil, err
 		}
-		tweets = append(tweets, &tw)
+		tweets = append(tweets, tw)
 	}
 	return tweets, nil
 }

@@ -6,6 +6,7 @@ import (
 	"GoTwitter/models"
 	"GoTwitter/services"
 	"GoTwitter/utils"
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -27,11 +28,14 @@ func NewUserController(_userService services.UserService) *UserController {
 }
 
 type userResponse struct {
-	Id        int64     `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Id             int64     `json:"id"`
+	Username       string    `json:"username"`
+	Email          string    `json:"email"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	FollowerCount  int64     `json:"follower_count"`
+	FollowingCount int64     `json:"following_count"`
+	IsFollowing    bool      `json:"is_following"`
 }
 
 func toUserResponse(u *models.User) *userResponse {
@@ -39,11 +43,14 @@ func toUserResponse(u *models.User) *userResponse {
 		return nil
 	}
 	return &userResponse{
-		Id:        u.Id,
-		Username:  u.Username,
-		Email:     u.Email,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		Id:             u.Id,
+		Username:       u.Username,
+		Email:          u.Email,
+		CreatedAt:      u.CreatedAt,
+		UpdatedAt:      u.UpdatedAt,
+		FollowerCount:  u.FollowerCount,
+		FollowingCount: u.FollowingCount,
+		IsFollowing:    u.IsFollowing,
 	}
 }
 
@@ -175,7 +182,12 @@ func (uc *UserController) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := uc.UserService.ListUsers(r.Context(), page, pageSize)
+	var viewerID *int64
+	if claims, ok := utils.GetUserFromRequest(r); ok {
+		viewerID = &claims.UserID
+	}
+
+	users, err := uc.UserService.ListUsers(r.Context(), page, pageSize, viewerID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -198,7 +210,12 @@ func (uc *UserController) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := uc.UserService.GetUserByID(r.Context(), id)
+	var viewerID *int64
+	if claims, ok := utils.GetUserFromRequest(r); ok {
+		viewerID = &claims.UserID
+	}
+
+	user, err := uc.UserService.GetUserByID(r.Context(), id, viewerID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -247,7 +264,7 @@ func (uc *UserController) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch updated user to return
-	updated, err := uc.UserService.GetUserByID(r.Context(), id)
+	updated, err := uc.UserService.GetUserByID(r.Context(), id, &claims.UserID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -275,4 +292,92 @@ func (uc *UserController) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.WriteJsonSuccessResponse(w, http.StatusOK, "User deleted successfully", nil)
+}
+
+func (uc *UserController) FollowUser(w http.ResponseWriter, r *http.Request) {
+	uc.toggleFollow(w, r, uc.UserService.FollowUser, "User followed successfully")
+}
+
+func (uc *UserController) UnfollowUser(w http.ResponseWriter, r *http.Request) {
+	uc.toggleFollow(w, r, uc.UserService.UnfollowUser, "User unfollowed successfully")
+}
+
+func (uc *UserController) ListFollowers(w http.ResponseWriter, r *http.Request) {
+	uc.listUserConnections(w, r, uc.UserService.ListFollowers, "Followers fetched successfully")
+}
+
+func (uc *UserController) ListFollowing(w http.ResponseWriter, r *http.Request) {
+	uc.listUserConnections(w, r, uc.UserService.ListFollowing, "Following users fetched successfully")
+}
+
+func (uc *UserController) toggleFollow(
+	w http.ResponseWriter,
+	r *http.Request,
+	action func(context.Context, int64, int64) (*models.User, error),
+	message string,
+) {
+	claims, ok := utils.GetUserFromContext(r.Context())
+	if !ok {
+		handleError(w, apperrors.NewAppError("unauthorized", http.StatusUnauthorized, nil))
+		return
+	}
+
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
+		return
+	}
+
+	user, err := action(r.Context(), claims.UserID, targetID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, message, toUserResponse(user))
+}
+
+func (uc *UserController) listUserConnections(
+	w http.ResponseWriter,
+	r *http.Request,
+	action func(context.Context, int64, int, int, *int64) ([]*models.User, error),
+	message string,
+) {
+	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		handleError(w, apperrors.NewAppError("invalid user id", http.StatusBadRequest, err))
+		return
+	}
+
+	page, err := parsePositiveIntQuery(r.URL.Query().Get("page"), "page", 1)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	pageSize, err := parsePositiveIntQuery(r.URL.Query().Get("page_size"), "page_size", 10)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	var viewerID *int64
+	if claims, ok := utils.GetUserFromRequest(r); ok {
+		viewerID = &claims.UserID
+	}
+
+	users, err := action(r.Context(), userID, page, pageSize, viewerID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	utils.WriteJsonSuccessResponse(w, http.StatusOK, message, map[string]any{
+		"items": toUserResponses(users),
+		"meta": paginationMeta{
+			Page:     page,
+			PageSize: pageSize,
+			Count:    len(users),
+		},
+	})
 }

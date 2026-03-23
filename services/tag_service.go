@@ -1,8 +1,8 @@
 package services
 
 import (
-	apperrors "GoTwitter/errors"
 	db "GoTwitter/db/repositories"
+	apperrors "GoTwitter/errors"
 	"GoTwitter/models"
 	"context"
 	"net/http"
